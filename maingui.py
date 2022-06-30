@@ -97,12 +97,21 @@ class MainWindowGui(Ui_MainProgram):
     def __init__(self):
         self.threadpool = QThreadPool()
         self.url = None
+        self.pause = False
+        self.resume = False
+        self.resume_use = 0
             
     def setupUi(self, *args, **kwargs):
         Ui_MainProgram.setupUi(self, *args, **kwargs)
         self.set_bar_0()
         self.show_bar(False)
         self.pushButton.clicked.connect(self.openWindow)
+        self.resume_btn.clicked.connect(self.resume_func)
+        self.resume_btn.hide()
+        self.pause_btn.hide()
+        self.pause_btn.setEnabled(False)
+        self.resume_btn.setEnabled(False)
+        self.pause_btn.clicked.connect(self.pause_func)
         self.actioninstall_From_File.triggered.connect(
             self.run_installer)
         self.actionclear_cache.triggered.connect(self.clear_cache)
@@ -128,7 +137,10 @@ class MainWindowGui(Ui_MainProgram):
             msg.setDetailedText(str(msg_details) + '\n\ncheck Full Logs [Help --> Open Logs]')
             self.set_bar_0()
             self.show_bar(False)
+            self.pause_btn.hide()
+            self.resume_btn.hide()
             self.pushButton.setEnabled(True)
+            self.pushButton.show()
             msg.exec()
             
     def show_error_popup(self,txt="An Error Has Occured Try Again!"):
@@ -139,7 +151,10 @@ class MainWindowGui(Ui_MainProgram):
         msg.setIcon(QtWidgets.QMessageBox.Icon.Critical)
         self.set_bar_0()
         self.show_bar(False)
+        self.pause_btn.hide()
+        self.resume_btn.hide()
         self.pushButton.setEnabled(True)
+        self.pushButton.show()      
         msg.exec()
         
     def show_success_popup(self,text=None):
@@ -153,7 +168,10 @@ class MainWindowGui(Ui_MainProgram):
         msg.setIcon(QtWidgets.QMessageBox.Icon.Information)
         self.set_bar_0()
         self.show_bar(False)
+        self.pause_btn.hide()
+        self.resume_btn.hide()
         self.pushButton.setEnabled(True)
+        self.pushButton.show() 
         msg.exec()
         
     def error_handler(self, n,normal=True):
@@ -246,7 +264,24 @@ class MainWindowGui(Ui_MainProgram):
         
         self.threadpool.start(worker)
         worker.signals.finished.connect(lambda: self.show_success_popup(text = "Cache Files Cleared Successfully!"))
+        
+    def pause_func(self):
+        if self.resume ==False:
+            self.pause=True
+            self.resume_btn.setEnabled(False)
+            self.pause_btn.setEnabled(False)
+            self.pause_btn.hide()
+            self.resume_btn.show()
 
+    def resume_func(self):
+        if self.pause == False:
+            self.resume = True
+            self.resume_btn.setEnabled(False)
+            self.pause_btn.setEnabled(False)
+            self.resume_use += 1
+            self.resume_btn.hide()
+            self.pause_btn.show()
+        
     def run_installer(self):
         fname = QtWidgets.QFileDialog.getOpenFileNames()
         worker = Worker(lambda *args,**kwargs: install(fname[0][0]))
@@ -271,7 +306,7 @@ class MainWindowGui(Ui_MainProgram):
         worker.signals.progress.connect(self.progress)
         worker.signals.error.connect(lambda *arg,**kwargs: self.error_handler(normal=False,*arg,**kwargs))
         self.threadpool.start(worker)
-
+        
         self.pushButton.setEnabled(False)
         self.show_bar(True)
 
@@ -283,6 +318,10 @@ class MainWindowGui(Ui_MainProgram):
         worker.signals.progress.connect(self.progress)
         worker.signals.error.connect(self.error_handler)
         self.threadpool.start(worker)
+        
+        self.pushButton.hide()
+        self.pause_btn.show()
+       
 
     def parser(self, data_args, progress_current, progress_main, progress):
         progress_main.emit(20)
@@ -330,10 +369,40 @@ class MainWindowGui(Ui_MainProgram):
                             
                 worker = Worker(lambda *args,**kwargs: f_download(remote_url,path,10)) #concurrent download so we can get the download progress
                 self.threadpool.start(worker)
-                
+                #pause resume function ---------------------------
+                thread_use = 0
                 while d.progress !=100 and d.alive == True:
                     download_percentage = int(d.progress)
                     progress_current.emit(download_percentage)
+                    d.dic['paused'] = self.pause
+                    if self.currentprogressBar.value() > 1:
+                        time.sleep(3)
+                        self.pause_btn.setEnabled(True)
+                    if self.pause:
+                        self.resume_btn.setEnabled(True)
+                        self.pause = False
+                        while True:
+                            if self.resume:
+                                thread_use += 1
+                                if thread_use == self.resume_use:
+                                    time.sleep(5)
+                                    worker = Worker(lambda *args,**kwargs: f_download(remote_url,path,10))
+                                    self.threadpool.start(worker)
+                                    self.resume = False
+                                    self.pause_btn.setEnabled(True)
+                                    break
+                                else:
+                                    time.sleep(5)
+                                    try:
+                                        d.dic['paused'] = True
+                                    except:
+                                        pass
+                                    worker = Worker(lambda *args,**kwargs: f_download(remote_url,path,10))
+                                    self.threadpool.start(worker)
+                                    self.resume = False
+                                    self.pause_btn.setEnabled(True)
+                                    break
+                #pause resume function ---------------------------
                     time.sleep(0.2)
                 progress_main.emit(2)
                 
